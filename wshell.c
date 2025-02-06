@@ -41,7 +41,31 @@ int pwd_handler(char* cmd, char* cwd) {
     return 0;
 }
 
-int check_builtin_cmd(char* cmd, char* cwd) {
+int history_handler(char* cmd, char* cmd_history[]) {
+    int hist_iter = 9;
+
+    for(int i = 9; i >= 0; i--) {
+        if(cmd_history[hist_iter] == NULL) {
+            continue;
+        }
+        printf("%s", cmd_history[hist_iter--]);
+    }
+    fflush(stdout);
+    return 0;
+}
+
+void update_cmd_history(char* cmd_history[], char* cmd, int* hist_count) {
+    // take new entry and update old list
+    for(int i = *hist_count; i > 0; i--) {
+        strcpy(cmd_history[i], cmd_history[i-1]); // move pointers over by 1
+    }
+    strcpy(cmd_history[0], cmd);
+    if (*hist_count != 9) {
+        *hist_count = *hist_count + 1;
+    }
+}
+
+int check_builtin_cmd(char* cmd, char* cwd, char* cmd_history[]) {
     int retval = 0;
     if(!strncmp(cmd, "exit", 4)) {
         exit(0);
@@ -58,7 +82,10 @@ int check_builtin_cmd(char* cmd, char* cwd) {
         pwd_handler(cmd, cwd);
         retval = 1;
     }
-    
+    else if (!strncmp(cmd, "history", 7)) {
+        history_handler(cmd, cmd_history);
+        retval = 1;
+    }
     return retval;
 }
 
@@ -66,11 +93,19 @@ int check_builtin_cmd(char* cmd, char* cwd) {
 
 int main(int argc, char* argv[]) {
 
+    char* cmd_history[10];
     char* current_directory = malloc(100*sizeof(char));
     char* cmd = malloc(100*sizeof(char));
-    char* cwd, *end_cwd, *cmd_string, *token;
+    char* cmd_string = malloc(100*sizeof(char));
+    char* cwd, *end_cwd,  *token;
     char* cmd_argv[100];
     int retval, arg_count, PID;
+    int hist_count;
+
+    for(int i = 0; i < 10; i++) {
+        cmd_history[i] = malloc(100*sizeof(char));;
+    }
+    hist_count = 0;
 
     while(1) {
         // print the cwd
@@ -86,7 +121,10 @@ int main(int argc, char* argv[]) {
             printf("%s", cmd);
             fflush(stdout);
         }
-        retval = check_builtin_cmd(cmd, cwd);
+
+        update_cmd_history(cmd_history, cmd, &hist_count);
+
+        retval = check_builtin_cmd(cmd, cwd, cmd_history);
         if(!retval) {
             PID = fork();
             if(PID != 0) {
@@ -104,7 +142,7 @@ int main(int argc, char* argv[]) {
                     cmd_argv[arg_count++] = token;
                 }
                 if(execvp(cmd_string, cmd_argv) == -1)  {// mybe execve?
-                    printf("wshell: could not execute command: %s", cmd_string);
+                    printf("wshell: could not execute command: %s\n", cmd_string);
                     exit(1);
                 }
             }
