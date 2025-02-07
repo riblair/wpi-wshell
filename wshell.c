@@ -6,42 +6,46 @@
 #include <errno.h>
 #include <sys/wait.h>
 
-int echo_handler(char* cmd) {
-    char* cmd_string = (5+cmd);
-    if(strlen(cmd) == 5) {
-        printf("\n");
+
+//TODO: currently not preserving spaces during this implementation of the echo cmd. 
+// Must find a better way to deal w/ this. 
+// substring everything after the "echo" in cmd 
+int echo_handler(char* cmd_argv[], int argv_count) {
+    char* echo_string = malloc(100*sizeof(char));
+    for(int i = 1; i < argv_count; i++) {
+        strcat(echo_string, cmd_argv[i]);
+        strcat(echo_string, " ");
     }
-    else {
-        printf("%s", cmd_string);
-    }
+    echo_string[strlen(echo_string)-1] = '\0';
+    printf("%s\n", echo_string);
     fflush(stdout);
     return 0;
 }
 
-int cd_handler(char* cmd) {
-    if(strlen(cmd) == 3) {
+int cd_handler(char* cmd_argv[], int argv_count) {
+    int retval = 1;
+    if(argv_count == 1) { // only cd called
        chdir(getenv("HOME"));
+       retval = 0;
+    }
+    else if (argv_count == 2) {
+        retval = abs(chdir(cmd_argv[1]));
+        if(retval) printf("wshell: no such directory: %s\n", cmd_argv[1]);
     }
     else {
-        char* cmd_string = (3+cmd);
-        cmd_string[strlen(cmd_string)-1] = '\0';
-        if(strchr(cmd_string, ' ') != NULL) {
-            printf("wshell: cd: too many arguments\n");
-        }
-        else if(chdir(cmd_string)) { // Check if there is more than one arguement. 
-            printf("wshell: no such directory: %s\n", cmd_string);
-        }
-    }    
-    return 0;
+        printf("wshell: cd: too many arguments\n");
+    } 
+    return retval;
 }
 
-int pwd_handler(char* cmd, char* cwd) {
+int pwd_handler() {
+    char* cwd = getcwd(malloc(100*sizeof(char)), 100);
     printf("%s\n", cwd);
     fflush(stdout);
     return 0;
 }
 
-int history_handler(char* cmd, char* cmd_history[]) {
+int history_handler(char* cmd_history[]) {
     int hist_iter = 9;
 
     for(int i = 9; i >= 0; i--) {
@@ -65,43 +69,45 @@ void update_cmd_history(char* cmd_history[], char* cmd, int* hist_count) {
     }
 }
 
-int check_builtin_cmd(char* cmd, char* cwd, char* cmd_history[]) {
-    int retval = 0;
-    if(!strncmp(cmd, "exit", 4)) {
-        exit(0);
-    } 
-    else if (!strncmp(cmd, "echo", 4)) {
-        echo_handler(cmd);
-        retval = 1;
-    }
-    else if (!strncmp(cmd, "cd", 2)) {
-        cd_handler(cmd);
-        retval = 1;
-    }
-    else if (!strncmp(cmd, "pwd", 3)) {
-        pwd_handler(cmd, cwd);
-        retval = 1;
-    }
-    else if (!strncmp(cmd, "history", 7)) {
-        history_handler(cmd, cmd_history);
-        retval = 1;
-    }
+// returns 0 on success, 1 on failure, and -1 if no cmd run.
+int check_builtin_cmd(char* cmd_argv[], int argv_count, char* cmd_history[]) {
+    int retval = -1;
+    if(!strncmp(cmd_argv[0], "exit", 4)) exit(0);
+    else if (!strncmp(cmd_argv[0], "echo", 4)) retval = echo_handler(cmd_argv, argv_count);
+    else if (!strncmp(cmd_argv[0], "cd", 2)) retval = cd_handler(cmd_argv,argv_count);
+    else if (!strncmp(cmd_argv[0], "pwd", 3)) retval = pwd_handler();
+    else if (!strncmp(cmd_argv[0], "history", 7)) retval = history_handler(cmd_history);
     return retval;
 }
 
+int child_handler(char* cmd_argv[]) {
+    int PID = fork();
+    int retval = 0;
 
+    if(PID) { //parent
+        waitpid(PID, &retval, 0);
+    }
+    else { //child
+        if(execvp(cmd_argv[0], cmd_argv) == -1)  {// mybe execve?
+            printf("wshell: could not execute command: %s\n", cmd_argv[0]);
+            exit(1);
+        }
+    }
+    return retval;
+}
 
 int main(int argc, char* argv[]) {
 
     char* cmd_history[10];
     char* current_directory = malloc(100*sizeof(char));
     char* cmd = malloc(100*sizeof(char));
-    char* cmd_string = malloc(100*sizeof(char));
-    char* cwd, *end_cwd,  *token;
+    char* cwd, *end_cwd, *token;
+    char* cmd_tokens[100];
     char* cmd_argv[100];
-    int retval, arg_count, PID;
-    int hist_count;
-
+    char* cmd_2_argv[100];
+    int retval, hist_count, token_iter;
+    int arg_count, arg2_count, token_count;
+    int and_mode, or_mode;
     for(int i = 0; i < 10; i++) {
         cmd_history[i] = malloc(100*sizeof(char));;
     }
@@ -109,6 +115,9 @@ int main(int argc, char* argv[]) {
 
     while(1) {
         // print the cwd
+        // zero_args(cmd_tokens);
+        // zero_args(cmd_argv);
+        // zero_args(cmd_2_argv);
         cwd = getcwd(current_directory, 100);
         end_cwd = basename(cwd);
 
@@ -121,32 +130,56 @@ int main(int argc, char* argv[]) {
             printf("%s", cmd);
             fflush(stdout);
         }
-
         update_cmd_history(cmd_history, cmd, &hist_count);
 
-        retval = check_builtin_cmd(cmd, cwd, cmd_history);
-        if(!retval) {
-            PID = fork();
-            if(PID != 0) {
-                waitpid(PID, &retval,0);
+        arg_count = 0;
+        arg2_count = 0;
+        token_count = 0;
+        token_iter = 0;
+        and_mode = 0;
+        or_mode = 0;
+        cmd[strlen(cmd)-1] = '\0';
+        token = strtok(cmd, " ");
+        cmd_tokens[token_count++] = token;
+        while (token != NULL) {
+            token = strtok(NULL, " ");
+            cmd_tokens[token_count++] = token;
+        }
+        token_count--;
+            
+        while (token_iter < token_count) {
+            if(!strcmp(cmd_tokens[token_iter], "&&")) {
+                and_mode = 1;
+                cmd_argv[token_iter++] = NULL;
+                break;
+            }
+            else if (!strcmp(cmd_tokens[token_iter], "||")) {
+                or_mode = 1;
+                cmd_argv[token_iter++] = NULL;
+                break;
             }
             else {
-                arg_count = 1;
-                // custom command, 
-                cmd[strlen(cmd)-1] = '\0'; // add nulterm to end of string
-                token = strtok(cmd, " ");
-                cmd_string = strcpy(cmd_string, token);
-                cmd_argv[0] = cmd_string;
-                while(token != NULL) {
-                    token = strtok(NULL, " ");
-                    cmd_argv[arg_count++] = token;
-                }
-                if(execvp(cmd_string, cmd_argv) == -1)  {// mybe execve?
-                    printf("wshell: could not execute command: %s\n", cmd_string);
-                    exit(1);
-                }
+                cmd_argv[token_iter] = cmd_tokens[token_iter];
             }
-        }   
+            token_iter++;                
+        }
+        arg_count = token_iter;
+        while (token_iter < token_count) {
+                cmd_2_argv[arg2_count++] = cmd_tokens[token_iter++];
+        }
+        
+        retval = check_builtin_cmd(cmd_argv, arg_count, cmd_history);
+        if(retval == -1) {
+            retval = child_handler(cmd_argv);
+        }
+        if(!retval && and_mode) {
+            retval = check_builtin_cmd(cmd_2_argv, arg2_count, cmd_history);
+            if (retval == -1) child_handler(cmd_2_argv);
+        }
+        else if (retval && or_mode) {
+            retval = check_builtin_cmd(cmd_2_argv, arg2_count, cmd_history);
+            if (retval == -1) child_handler(cmd_2_argv);
+        } 
     }
     return 0;
 }
