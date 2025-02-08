@@ -9,15 +9,9 @@
 
 //TODO: currently not preserving spaces during this implementation of the echo cmd. 
 // Must find a better way to deal w/ this. 
-// substring everything after the "echo" in cmd 
-int echo_handler(char* cmd_argv[], int argv_count) {
-    char* echo_string = malloc(100*sizeof(char));
-    for(int i = 1; i < argv_count; i++) {
-        strcat(echo_string, cmd_argv[i]);
-        strcat(echo_string, " ");
-    }
-    echo_string[strlen(echo_string)-1] = '\0';
-    printf("%s\n", echo_string);
+// substring everything after the "echo " in cmd 
+int echo_handler(char* cmd_substr) {
+    printf("%s\n", (cmd_substr+5));
     fflush(stdout);
     return 0;
 }
@@ -70,10 +64,10 @@ void update_cmd_history(char* cmd_history[], char* cmd, int* hist_count) {
 }
 
 // returns 0 on success, 1 on failure, and -1 if no cmd run.
-int check_builtin_cmd(char* cmd_argv[], int argv_count, char* cmd_history[]) {
+int check_builtin_cmd(char* cmd_substr, char* cmd_argv[], int argv_count, char* cmd_history[]) {
     int retval = -1;
     if(!strncmp(cmd_argv[0], "exit", 4)) exit(0);
-    else if (!strncmp(cmd_argv[0], "echo", 4)) retval = echo_handler(cmd_argv, argv_count);
+    else if (!strncmp(cmd_argv[0], "echo", 4)) retval = echo_handler(cmd_substr);
     else if (!strncmp(cmd_argv[0], "cd", 2)) retval = cd_handler(cmd_argv,argv_count);
     else if (!strncmp(cmd_argv[0], "pwd", 3)) retval = pwd_handler();
     else if (!strncmp(cmd_argv[0], "history", 7)) retval = history_handler(cmd_history);
@@ -101,23 +95,34 @@ int main(int argc, char* argv[]) {
     char* cmd_history[10];
     char* current_directory = malloc(100*sizeof(char));
     char* cmd = malloc(100*sizeof(char));
-    char* cwd, *end_cwd, *token;
+    char* cmd_ref = malloc(100*sizeof(char));
+    char* cmd_1_substr = malloc(50*sizeof(char));
+    char* cmd_2_substr = malloc(50*sizeof(char));
+    char* cwd, *end_cwd, *token, *delim_substr;
     char* cmd_tokens[100];
     char* cmd_argv[100];
     char* cmd_2_argv[100];
     int retval, hist_count, token_iter;
     int arg_count, arg2_count, token_count;
     int and_mode, or_mode;
+    int delim_position;
     for(int i = 0; i < 10; i++) {
         cmd_history[i] = malloc(100*sizeof(char));;
     }
     hist_count = 0;
 
     while(1) {
+        delim_substr = NULL;
+        delim_position = 0;
+        arg_count = 0;
+        arg2_count = 0;
+        token_count = 0;
+        token_iter = 0;
+        and_mode = 0;
+        or_mode = 0;
+
+
         // print the cwd
-        // zero_args(cmd_tokens);
-        // zero_args(cmd_argv);
-        // zero_args(cmd_2_argv);
         cwd = getcwd(current_directory, 100);
         end_cwd = basename(cwd);
 
@@ -132,13 +137,9 @@ int main(int argc, char* argv[]) {
         }
         update_cmd_history(cmd_history, cmd, &hist_count);
 
-        arg_count = 0;
-        arg2_count = 0;
-        token_count = 0;
-        token_iter = 0;
-        and_mode = 0;
-        or_mode = 0;
+        
         cmd[strlen(cmd)-1] = '\0';
+        strcpy(cmd_ref, cmd);
         token = strtok(cmd, " ");
         cmd_tokens[token_count++] = token;
         while (token != NULL) {
@@ -151,11 +152,17 @@ int main(int argc, char* argv[]) {
             if(!strcmp(cmd_tokens[token_iter], "&&")) {
                 and_mode = 1;
                 cmd_argv[token_iter++] = NULL;
+
+                delim_substr = strstr(cmd_ref, " &&");
+                delim_position = delim_substr - cmd_ref;
                 break;
             }
             else if (!strcmp(cmd_tokens[token_iter], "||")) {
                 or_mode = 1;
                 cmd_argv[token_iter++] = NULL;
+
+                delim_substr = strstr(cmd_ref, " ||");
+                delim_position = delim_substr - cmd_ref;
                 break;
             }
             else {
@@ -167,17 +174,26 @@ int main(int argc, char* argv[]) {
         while (token_iter < token_count) {
                 cmd_2_argv[arg2_count++] = cmd_tokens[token_iter++];
         }
-        
-        retval = check_builtin_cmd(cmd_argv, arg_count, cmd_history);
+
+        // seperate cmd strings 1 and 2 into substrings for echo handler
+        if(!delim_position) {
+            // only 1 command was entered, entire string is cmd1
+            cmd_1_substr = cmd_ref;
+        }
+        else {
+            cmd_1_substr = strncpy(cmd_1_substr, cmd_ref, delim_position);
+            cmd_2_substr = (cmd_ref+delim_position+4); // delims are two characters w/ a space on either side
+        }
+        retval = check_builtin_cmd(cmd_1_substr, cmd_argv, arg_count, cmd_history);
         if(retval == -1) {
             retval = child_handler(cmd_argv);
         }
         if(!retval && and_mode) {
-            retval = check_builtin_cmd(cmd_2_argv, arg2_count, cmd_history);
+            retval = check_builtin_cmd(cmd_2_substr, cmd_2_argv, arg2_count, cmd_history);
             if (retval == -1) child_handler(cmd_2_argv);
         }
         else if (retval && or_mode) {
-            retval = check_builtin_cmd(cmd_2_argv, arg2_count, cmd_history);
+            retval = check_builtin_cmd(cmd_2_substr, cmd_2_argv, arg2_count, cmd_history);
             if (retval == -1) child_handler(cmd_2_argv);
         } 
     }
