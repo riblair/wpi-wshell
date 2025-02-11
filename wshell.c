@@ -25,6 +25,12 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 
+/*
+    Function checks first argument from `newArr` for one of the built-in commands to execute.
+    If the string (copied into checkls) matches one of {"cd", "jobs", "kill", "pwd", "echo", "history"},
+    then it executes the command and builtIn() returns 0.
+    If the `newArr[0]` does not match any of the built in commands, the function returns 1.
+*/
 int builtIn (char* newArr[], char* path, char* shortenedPath, char* fullArguments){
     int i = 0;
     while (newArr[i] != NULL){
@@ -128,6 +134,12 @@ int builtIn (char* newArr[], char* path, char* shortenedPath, char* fullArgument
     return 1;
 }
 
+
+
+/*
+    Function checks for any jobs running in the background by querying with `waitpid()`.
+    This function updates the global variables `backRunning`, `backPids`, `baclJobIds`, `backCommands` and `activeJobs`
+*/
 void checkBackgroundJobs() {
     int status;
     pid_t pid;
@@ -145,6 +157,10 @@ void checkBackgroundJobs() {
     }
 }
 
+
+/* 
+    Updates job_id circular queue and returns next available job_id
+*/
 int findAvailableJobId() {
     nextJobId++;
     if (nextJobId > 255) nextJobId = 1;
@@ -168,6 +184,11 @@ void addBackgroundJob(pid_t pid, char* cmd) {
     }
 }
 
+/*
+    Function handles executing a command from the stdin. 
+    The param `background` determines if the parent thread should wait for the child before continuing execution.
+    Function returns 0 on successful execution of the command, and 1 on failure.
+*/
 int command(char* newArr[], bool background) {
     pid_t pid;
     pid = fork();
@@ -211,6 +232,11 @@ int command(char* newArr[], bool background) {
     return 0;
 }
 
+
+/*
+    Function handles running two commands run sequentially from the command line based on the status of `isAnd`. 
+    `secondCmd` is ran if the status of the first output aligns with the logical-operator policy; (0 && `secondCmd`) or (1 || `secondCmd`).
+*/
 void handleAndOrCommands(char* firstCmd[], char* secondCmd[], bool isAnd, char* path, char* shortenedPath, char* fullArguments) {
     int builtin = builtIn(firstCmd, path, shortenedPath, fullArguments);
     bool shouldRunSecond;
@@ -230,6 +256,11 @@ void handleAndOrCommands(char* firstCmd[], char* secondCmd[], bool isAnd, char* 
     }
 }
 
+
+/*
+    Handles redirecting outputs from the given command to a different file-descriptor. 
+    Returns 1 if an error was encountered in the process, or returns the status of the executed cmd.
+*/
 int executeWithRedirection(char* cmd[], char* file, bool shouldAppend) {
     pid_t pid = fork();
    
@@ -272,7 +303,10 @@ int executeWithRedirection(char* cmd[], char* file, bool shouldAppend) {
     }
 }
 
-
+/*
+    Handles redirecting outputs from `cmd1` as inputs for `cmd2` 
+    Returns 1 if an error was encounted during the process, or returns the status of the executed `cmd2`
+*/
 int executePipe(char* cmd1[], char* cmd2[]) {
     int pipefd[2];
     pid_t pid1, pid2;
@@ -333,6 +367,13 @@ void addHistory(char* command){
     }
 }
 
+/*
+    Main executable logic. The shell runs in a loop with the following steps:
+        1. Checks on and updates status of background processes.
+        2. Prompts and accepts input from the user
+        3. Tokenizes and parses stdin, splitting it into two commands, and handling logical-operators ("&&", "||", ">", ">>", "|", "&")
+        4. Handles execution of commands based on input parameters and logical-operators. 
+*/
 void shell() {
     char prompt[128] = "$ ";
     char arguments[128];
