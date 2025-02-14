@@ -31,6 +31,13 @@ For pipe, we check if it is in the input: if it is we call the function. Then, w
 Part 5
 ---
 Design rationale 
+Handling background processes comes in three steps; Parsing input for new logical operator "&", sending jobs to the background with correct kwargs via fork(), monitoring process state at beginning of shell() loop. 
+All three steps can be functionally isolated and implemented in seperate function calls at the appropriote place in the shell() loop.  
+
 Implementation logic 
+After tokenizing the input string, we parse for the "&" logical operator and raise a flag if detected.
+We handle forking as normal, except the parent no longer waits for the child process to finish before restarting the shell() loop.
+Each background job's PID is stored in an array `backPids` and their cmd was stored in  `backCommands`. This makes calls to 'kill' or 'jobs' able to reference previously ran jobs.   
+Before accepting a new set of inputs we check the state of the background jobs and print the status of the finished jobs. 
 
 We are using the newer version of the tests with 3.out and 6.out not having whitespace 
