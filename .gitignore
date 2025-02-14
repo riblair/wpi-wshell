@@ -3,3 +3,5 @@ test*
 wshell
 .DS_Store
 .vscode/
+__MACOSX/
+**.zip
