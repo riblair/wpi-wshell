@@ -6,6 +6,7 @@
 
 struct job {
     int id;
+    int arrival_time;
     int length;
     // other such neccesities?
     struct job *next;

@@ -24,18 +24,67 @@ struct args* arg_parse(char* argv[]) {
 }
 
 struct job* create_job_queue(char* file_path) {
-    //TODO: implement
-    return NULL;
+    
+    FILE* in_file = fopen(file_path, "r");
+    if(in_file == NULL) return NULL;
+    char* line = malloc(100* sizeof(char));
+    size_t len = 0;
+    __ssize_t nread;
+    int ids = 0;
+
+
+    struct job* job_head = malloc(sizeof(struct job));
+    struct job* job_iter = job_head;
+    struct job* job_iter2;
+
+    while((nread = getline(&line, &len, in_file)) != -1) {
+        job_iter2 = job_iter;
+        job_iter->id = ids++;
+        job_iter->arrival_time = atoi(strtok(line, ","));
+        job_iter->length = atoi(strtok(NULL, ","));
+
+        job_iter->next = malloc(sizeof(struct job));
+        job_iter = job_iter->next;
+    }
+    free(job_iter);
+    job_iter2->next = NULL;
+    return job_head;
 }
 
 int count_jobs(struct job* job_head) {
-    //TODO: implement
-    return 0;
+    int count = 0;
+    struct job* job_iter = job_head;
+
+    while(job_iter != NULL) {
+        count++;
+        job_iter = job_iter->next;
+    }
+
+    return count;
 }
 
 void handler_FIFO(struct job* job_head, struct metrics* run_metrics) {
-    //TODO: implement
-    return;
+
+    // iterate through jobs in order, runnning them for their entire runtime
+
+    int sim_time = 0;
+    int end_cond = 0;
+    struct job* job_iter = job_head;
+
+    while(!end_cond) {
+        if(sim_time < job_iter->arrival_time) {
+            sim_time = job_iter->arrival_time;
+        }
+        // run time for selected amount
+        printf("t=%d: [Job %d] arrived at [%d], ran for: [%d]\n", 
+            sim_time, job_iter->id, job_iter->arrival_time, job_iter->length);
+        fflush(stdout);
+        sim_time+= job_iter->length;
+        
+        job_iter = job_iter->next;
+        // end cond is we are out of jobs
+        end_cond = (job_iter == NULL);
+    }
 }
 
 void handler_SJF(struct job* job_head, struct metrics* run_metrics) {
@@ -89,16 +138,16 @@ int main(int argc, char* argv[]) {
     
     void (*policy_func)(struct job*, struct metrics*);
     
-    if(strncmp("FIFO", args->policy, 4)) policy_func = handler_FIFO;
-    else if(strncmp("SJF", args->policy, 3)) policy_func = handler_SJF;
-    else if(strncmp("RR", args->policy, 2)) policy_func = handler_RR;
+    if(!strncmp("FIFO", args->policy, 4)) policy_func = handler_FIFO;
+    else if(!strncmp("SJF", args->policy, 3)) policy_func = handler_SJF;
+    else if(!strncmp("RR", args->policy, 2)) policy_func = handler_RR;
     else {
         printf("UNEXPECTED POLICY");
         exit(1);
     }
-    
+    printf("Execution trace with %s:\n", args->policy);
     policy_func(job_head, run_metrics);
-
+    printf("End of execution with %s.\n", args->policy);
     if(args->analysis_mode) analyze_run(run_metrics);
     return 0;
 }
