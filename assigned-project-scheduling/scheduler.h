@@ -3,12 +3,14 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <limits.h>
 
 struct job {
     int id;
     int arrival_time;
     int length;
     // other such neccesities?
+    // def need some for metrics...
     struct job *next;
 };
 
@@ -28,7 +30,8 @@ struct args {
 struct args* arg_parse(char**);
 struct job* create_job_queue(char*);
 int count_jobs(struct job*);
-void handler_FIFO(struct job*, struct metrics*);
-void handler_SJF(struct job*, struct metrics*);
-void handler_RR(struct job*, struct metrics*);
+struct job* handler_FIFO(struct job*, int);
+struct job* handler_SJF(struct job*, int);
+struct job* handler_RR(struct job*, int);
+void handle_run(struct job*, int, struct metrics*, struct job*(struct job*, int));
 void analyze_run(struct metrics*);

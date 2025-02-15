@@ -15,8 +15,7 @@ struct args* arg_parse(char* argv[]) {
             strncpy(args->file_path, argv[i], 100);
             break;
         case 4: // analysis mode
-            if(atoi(argv[i])) args->timeslice = atoi(argv[i]);
-            else args->timeslice = 1;
+            args->timeslice = atoi(argv[i]);
             break;
         }
     }
@@ -63,38 +62,76 @@ int count_jobs(struct job* job_head) {
     return count;
 }
 
-void handler_FIFO(struct job* job_head, struct metrics* run_metrics) {
-
-    // iterate through jobs in order, runnning them for their entire runtime
-
-    int sim_time = 0;
-    int end_cond = 0;
+/* 
+    FIFO Selects first job that has a non-zero length 
+    Assuptions: 
+        Jobs are in order of arrival time
+        There will always be a job available to queue UNLESS we have queued all jobs
+*/
+struct job* handler_FIFO(struct job* job_head, int sim_time) {
     struct job* job_iter = job_head;
+    while(job_iter != NULL) {
+        if(job_iter->length) return job_iter;
+        else job_iter = job_iter->next;
+    }
+    return NULL;
+}
 
-    while(!end_cond) {
-        if(sim_time < job_iter->arrival_time) {
-            sim_time = job_iter->arrival_time;
+struct job* handler_SJF(struct job* job_head, int sim_time) {
+    // loop through jobs 
+    // check sim time 
+    // check for shortest job length 
+    int shortest_length = INT_MAX; 
+    struct job* chosen_job = NULL; 
+    struct job* job_iter = job_head; 
+    while(job_iter != NULL) {
+        // check length and compare to shortest length 
+        // if arrival is not sim time break 
+        if (job_iter->length < shortest_length && job_iter->length != 0 && job_iter->arrival_time <= sim_time){
+            shortest_length = job_iter->length;
+            chosen_job = job_iter; 
         }
+        job_iter = job_iter->next; 
+    }
+    return chosen_job; 
+}
+
+struct job* handler_RR(struct job* job_head, int sim_time) {
+    //TODO: implement
+    return NULL;
+}
+
+void handle_run(struct job* job_head, int timeslice, struct metrics* run_metrics, struct job* policy_func(struct job*, int)) {
+    int sim_time = 0, runtime;
+    struct job* job_curr;
+
+    int jobs_run = 0;
+    int jobs_total = count_jobs(job_head);
+
+    while(1) {
+        // select job based on policy
+            // if no job to select, break;
+        job_curr = policy_func(job_head, sim_time);
+        if(job_curr == NULL) {
+            if(jobs_run != jobs_total) {
+                sim_time++;
+                continue;
+            }
+            else break;
+        }
+        //run for time (timeslice or ALL)
+        runtime = timeslice ? timeslice : job_curr->length;
+        job_curr->length -= runtime;
+        
         // run time for selected amount
         printf("t=%d: [Job %d] arrived at [%d], ran for: [%d]\n", 
-            sim_time, job_iter->id, job_iter->arrival_time, job_iter->length);
+            sim_time, job_curr->id, job_curr->arrival_time, runtime);
         fflush(stdout);
-        sim_time+= job_iter->length;
-        
-        job_iter = job_iter->next;
-        // end cond is we are out of jobs
-        end_cond = (job_iter == NULL);
+        sim_time += runtime;
+
+        // adjust metrics here?
+        if(job_curr->length == 0) jobs_run++;
     }
-}
-
-void handler_SJF(struct job* job_head, struct metrics* run_metrics) {
-    //TODO: implement
-    return;
-}
-
-void handler_RR(struct job* job_head, struct metrics* run_metrics) {
-    //TODO: implement
-    return;
 }
 
 void analyze_run(struct metrics* run_metrics) {
@@ -136,7 +173,7 @@ int main(int argc, char* argv[]) {
     struct metrics* run_metrics = malloc(sizeof(struct metrics));
     run_metrics->num_jobs = count_jobs(job_head);
     
-    void (*policy_func)(struct job*, struct metrics*);
+    struct job* (*policy_func)(struct job*, int);
     
     if(!strncmp("FIFO", args->policy, 4)) policy_func = handler_FIFO;
     else if(!strncmp("SJF", args->policy, 3)) policy_func = handler_SJF;
@@ -146,7 +183,7 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
     printf("Execution trace with %s:\n", args->policy);
-    policy_func(job_head, run_metrics);
+    handle_run(job_head, args->timeslice, run_metrics, policy_func);
     printf("End of execution with %s.\n", args->policy);
     if(args->analysis_mode) analyze_run(run_metrics);
     return 0;
