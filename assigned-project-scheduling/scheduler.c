@@ -65,29 +65,24 @@ int count_jobs(struct job* job_head) {
 /* 
     FIFO Selects first job that has a non-zero length 
     Assuptions: 
-        Jobs are in order of arrival time
-        There will always be a job available to queue UNLESS we have queued all jobs
+        Jobs will have non-zero lengths
+        Finished jobs will be removed from the queue
 */
-struct job* handler_FIFO(struct job* job_head, int sim_time) {
-    struct job* job_iter = job_head;
-    while(job_iter != NULL) {
-        if(job_iter->length) return job_iter;
-        else job_iter = job_iter->next;
-    }
-    return NULL;
+struct job* handler_FIFO(struct job** job_queue) {
+    return *job_queue;
 }
 
-struct job* handler_SJF(struct job* job_head, int sim_time) {
+struct job* handler_SJF(struct job** job_queue) {
     // loop through jobs 
     // check sim time 
     // check for shortest job length 
     int shortest_length = INT_MAX; 
     struct job* chosen_job = NULL; 
-    struct job* job_iter = job_head; 
+    struct job* job_iter = *job_queue; 
     while(job_iter != NULL) {
         // check length and compare to shortest length 
         // if arrival is not sim time break 
-        if (job_iter->length < shortest_length && job_iter->length != 0 && job_iter->arrival_time <= sim_time){
+        if (job_iter->length < shortest_length){
             shortest_length = job_iter->length;
             chosen_job = job_iter; 
         }
@@ -96,41 +91,150 @@ struct job* handler_SJF(struct job* job_head, int sim_time) {
     return chosen_job; 
 }
 
-struct job* handler_RR(struct job* job_head, int sim_time) {
-    //TODO: implement
-    return NULL;
+/* 
+    RR Selects jobs on a rotating basis. 
+    Assuptions: 
+        The first element is always the one that is next to be queued
+        Queued jobs that do not finish will be pushed to the back
+        Finished jobs will be removed from the queue
+*/
+struct job* handler_RR(struct job** job_queue) {
+    return *job_queue;
 }
 
-void handle_run(struct job* job_head, int timeslice, struct metrics* run_metrics, struct job* policy_func(struct job*, int)) {
+
+int remove_finished_jobs(struct job** job_queue) {
+    if(*job_queue == NULL) {
+        return 0;
+    }
+     /* get rid of elements that have length 0 */
+    // there should only be ONE element max that needs to get removed.
+    int removed = 0;
+    struct job* job_q_iter = *job_queue;
+    job_q_iter = job_q_iter->next;
+    struct job* job_q_iter2 = *job_queue;
+
+    if(job_q_iter2->length == 0) { // head needs to be removed
+        struct job* tmp = *job_queue;
+        if(job_q_iter != NULL) {
+            *job_queue = job_q_iter;
+        }
+        else {
+            *job_queue = NULL;
+        }
+        free(tmp);
+        removed = 1;
+    }
+
+    while(job_q_iter != NULL && !removed) {
+        if(job_q_iter->length == 0) {
+            struct job* tmp = job_q_iter;
+            job_q_iter2->next = job_q_iter->next;
+            free(tmp);
+            removed = 1;
+        }
+        else {
+            job_q_iter2 = job_q_iter;
+            job_q_iter = job_q_iter->next;
+        }
+    }
+    return removed;
+}
+
+void shift_job_queue(struct job** job_queue) {
+    if(*job_queue == NULL) {
+        return;
+    }
+    struct job* job_q_iter = *job_queue;
+    // make job_q_iter_end point to last element
+    while(job_q_iter->next != NULL) {
+        job_q_iter = job_q_iter->next;
+    }
+    /* Shift first element to end of queue*/
+    // Not single element queue
+    if(job_q_iter != *job_queue) {
+        // shift first element of queue to the end
+        struct job* tmp = *job_queue;
+        job_q_iter->next = tmp;
+        *job_queue = tmp->next;
+        tmp->next = NULL;
+    }
+}
+/* Add new jobs to end of queue*/
+void add_new_jobs(struct job** job_queue, struct job** job_head, int sim_time) {
+    struct job* job_head_iter = *job_head;
+    struct job* job_q_iter = *job_queue;
+    // make job_q_iter_end point to last element
+    if(job_q_iter != NULL) {
+        while(job_q_iter->next != NULL) job_q_iter = job_q_iter->next;
+    }
+
+
+    /* scan through job_head for new unadded elements*/
+    while(job_head_iter != NULL) {
+        if(!job_head_iter->scheduled && job_head_iter->arrival_time <= sim_time) {
+                job_head_iter->scheduled = 1;
+                // make copy and append to end of queue
+                struct job* tmp = malloc(sizeof(struct job));
+                copy_job(tmp, job_head_iter);
+                tmp->next = NULL; //dont want to copy the next val
+                if(*job_queue == NULL) { // empty queue
+                    *job_queue = tmp;
+                    job_q_iter = *job_queue;
+                }
+                else { // append to next and iterate 
+                    job_q_iter->next = tmp;
+                    job_q_iter = tmp;
+                }
+            }
+        job_head_iter = job_head_iter->next;
+    }
+}
+
+void print_job_queue(struct job** job_queue) {
+    struct job* job_iter = *job_queue;
+    printf("Start of Job Q\n");
+    while(job_iter != NULL) {
+        printf("Job [%d, %p], at: %d, l: %d, next: %p\n", 
+            job_iter->id, &job_iter, job_iter->arrival_time, 
+            job_iter->length, job_iter->next);
+        job_iter = job_iter->next;
+    }
+    printf("End of Job Q\n");
+}
+
+
+void handle_run(struct job* job_head, int timeslice, struct metrics* run_metrics, struct job* policy_func(struct job**)) {
     int sim_time = 0, runtime;
     struct job* job_curr;
 
     int jobs_run = 0;
     int jobs_total = count_jobs(job_head);
 
-    while(1) {
-        // select job based on policy
-            // if no job to select, break;
-        job_curr = policy_func(job_head, sim_time);
-        if(job_curr == NULL) {
-            if(jobs_run != jobs_total) {
-                sim_time++;
-                continue;
-            }
-            else break;
-        }
-        //run for time (timeslice or ALL)
-        runtime = timeslice ? timeslice : job_curr->length;
-        job_curr->length -= runtime;
-        
-        // run time for selected amount
-        printf("t=%d: [Job %d] arrived at [%d], ran for: [%d]\n", 
-            sim_time, job_curr->id, job_curr->arrival_time, runtime);
-        fflush(stdout);
-        sim_time += runtime;
+    struct job** job_queue = malloc(sizeof(struct job*)); 
+    while(jobs_run < jobs_total) {
+        // print_job_queue(job_queue);
+        //TODO: CURRENTLY twisting then adding, need to reverse this process somehow...
+        add_new_jobs(job_queue, &job_head, sim_time);
+        job_curr = policy_func(job_queue);
+        if(job_curr == NULL) sim_time++;
+        else {  
+            /* Run job*/
+            runtime = timeslice ? MIN(timeslice, job_curr->length) : job_curr->length;
+            job_curr->length -= runtime;
 
-        // adjust metrics here?
-        if(job_curr->length == 0) jobs_run++;
+            printf("t=%d: [Job %d] arrived at [%d], ran for: [%d]\n", 
+                sim_time, job_curr->id, job_curr->arrival_time, runtime);
+            fflush(stdout);
+            sim_time += runtime;
+            if(job_curr->length == 0) {
+                remove_finished_jobs(job_queue);   
+                jobs_run++;
+            }
+            else {
+                shift_job_queue(job_queue);
+            }
+        }
     }
 }
 
@@ -158,12 +262,6 @@ int main(int argc, char* argv[]) {
     "t=0: [Job 0] arrived at [0], ran for: [3]"
     */
 
-    // parse inputs from user
-    // parse .in file to LL
-    // start execution based on policy
-    // monitor results
-    // profit?
-
     if(argc != 5) {
         printf("Incorrect amount of args inputs. Expected ./scheduler [0/1] [policy {'FIFO', 'SJF', 'RR'}] ['input_file_path.in'] [timeslice duration]");
         exit(1);
@@ -173,13 +271,13 @@ int main(int argc, char* argv[]) {
     struct metrics* run_metrics = malloc(sizeof(struct metrics));
     run_metrics->num_jobs = count_jobs(job_head);
     
-    struct job* (*policy_func)(struct job*, int);
+    struct job* (*policy_func)(struct job**);
     
     if(!strncmp("FIFO", args->policy, 4)) policy_func = handler_FIFO;
     else if(!strncmp("SJF", args->policy, 3)) policy_func = handler_SJF;
     else if(!strncmp("RR", args->policy, 2)) policy_func = handler_RR;
     else {
-        printf("UNEXPECTED POLICY");
+        printf("UNEXPECTED POLICY: %s, \n", args->policy);
         exit(1);
     }
     printf("Execution trace with %s:\n", args->policy);
