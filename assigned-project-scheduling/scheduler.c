@@ -211,13 +211,15 @@ void handle_run(struct job* job_head, int timeslice, struct metrics* run_metrics
     int jobs_run = 0;
     int jobs_total = count_jobs(job_head);
 
-    struct job** job_queue = malloc(sizeof(struct job*)); 
+    struct job** job_queue = malloc(sizeof(struct job*));
+    add_new_jobs(job_queue, &job_head, sim_time); 
     while(jobs_run < jobs_total) {
         // print_job_queue(job_queue);
-        //TODO: CURRENTLY twisting then adding, need to reverse this process somehow...
-        add_new_jobs(job_queue, &job_head, sim_time);
         job_curr = policy_func(job_queue);
-        if(job_curr == NULL) sim_time++;
+        if(job_curr == NULL) {
+            sim_time++;
+            add_new_jobs(job_queue, &job_head, sim_time);
+        }
         else {  
             /* Run job*/
             runtime = timeslice ? MIN(timeslice, job_curr->length) : job_curr->length;
@@ -227,6 +229,7 @@ void handle_run(struct job* job_head, int timeslice, struct metrics* run_metrics
                 sim_time, job_curr->id, job_curr->arrival_time, runtime);
             fflush(stdout);
             sim_time += runtime;
+            add_new_jobs(job_queue, &job_head, sim_time);
             if(job_curr->length == 0) {
                 remove_finished_jobs(job_queue);   
                 jobs_run++;
